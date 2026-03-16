@@ -1,5 +1,16 @@
-import { randomUUID } from 'crypto';
 import type { PromptPolicy, PromptInvocationResult, PromptTelemetryEvent } from './types.js';
+
+/** Cross-platform UUID: uses Web Crypto in browser/Node 19+, fallback for older envs */
+function generateRequestId(): string {
+  if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 import type { OutputSchema } from './types.js';
 import { PromptGuardrailsError } from './errors.js';
 import { loadPolicyConfig, checkPolicyEnabled, type PromptRuntimeConfig } from './policy.js';
@@ -38,7 +49,7 @@ export function createPromptRuntime(config: CreatePromptRuntimeOptions) {
         userId?: string;
       },
     ): Promise<PromptInvocationResult<T>> {
-      const requestId = options?.requestId ?? randomUUID();
+      const requestId = options?.requestId ?? generateRequestId();
 
       let policy: PromptPolicy;
       try {
