@@ -15,7 +15,7 @@ Add to your `package.json`:
 ```json
 {
   "dependencies": {
-    "@bstockwelldev/prompt-guardrails-core": "^1.0.0"
+    "@bstockwelldev/prompt-guardrails-core": "^1.0.1"
   }
 }
 ```
@@ -34,7 +34,7 @@ The package is developed in its own repository and published to the npm registry
 ### Phase 1: Install from npm
 
 1. Add `@bstockwelldev/prompt-guardrails-core` as a dependency:
-   - `"@bstockwelldev/prompt-guardrails-core": "^1.0.0"`
+   - `"@bstockwelldev/prompt-guardrails-core": "^1.0.1"`
 
 2. Create a **host adapter** per app:
    - Implement `GatewayAdapter` that calls your provider (Gemini, OpenAI, etc.)

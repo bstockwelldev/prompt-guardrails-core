@@ -14,7 +14,7 @@ Stateless server-side prompt guardrails: policy, input/output validation, struct
 npm install @bstockwelldev/prompt-guardrails-core
 ```
 
-**For Vercel/CI:** Use the npm package (`^1.0.0`). For local development before first publish, consumers may use `file:../prompt-guardrails-core`; after publishing, switch to `^1.0.0`.
+**For Vercel/CI:** Use the npm package (`^1.0.1`). For local development before first publish, consumers may use `file:../prompt-guardrails-core`; after publishing, switch to `^1.0.1`.
 
 ## Public API
 
