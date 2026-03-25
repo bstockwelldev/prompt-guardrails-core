@@ -97,6 +97,31 @@ describe('validatePromptOutput', () => {
     if (!result.ok) expect(result.reason).toBe('output_leakage_detected');
   });
 
+  it('returns output_domain_validation_failed when afterParse rejects', () => {
+    const result = validatePromptOutput(
+      '{"a": 1, "b": "ok"}',
+      SimpleSchema as any,
+      {
+        afterParse: () => ({ ok: false }),
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('output_domain_validation_failed');
+  });
+
+  it('applies custom leakagePatterns', () => {
+    const result = validatePromptOutput(
+      '{"a": 1, "b": "forbiddenword"}',
+      SimpleSchema as any,
+      {
+        leakagePatterns: [/forbiddenword/i],
+        includeDefaultLeakagePatterns: false,
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('output_leakage_detected');
+  });
+
   it('repairs trailing comma and validates', () => {
     const result = validatePromptOutput(
       '{"a": 1, "b": "x",}',

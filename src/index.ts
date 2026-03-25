@@ -37,7 +37,22 @@ export {
   parseStructuredOutput,
   repairMalformedJson,
   checkLeakagePatterns,
+  type ValidatePromptOutputOptions,
+  type ValidatePromptOutputFailureReason,
 } from './output.js';
+
+export {
+  quoteAppearsInSource,
+  filterInsightsBySource,
+  type QuoteInSourceOptions,
+} from './evidence.js';
+
+export {
+  invokeSequential,
+  type SequentialStepResult,
+  type SequentialStepOk,
+  type SequentialStepFail,
+} from './sequential.js';
 
 export {
   buildStructuredPrompt,

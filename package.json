@@ -1,6 +1,6 @@
 {
   "name": "@bstockwelldev/prompt-guardrails-core",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Stateless server-side prompt guardrails: policy, input/output validation, structured invocation, and privacy-safe telemetry",
   "type": "module",
   "main": "./dist/index.js",

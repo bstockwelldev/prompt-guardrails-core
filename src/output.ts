@@ -3,7 +3,35 @@ import { PromptGuardrailsError } from './errors.js';
 
 const FENCE_REGEX = /^```(?:json)?\s*\n?(.*?)\n?\s*```$/s;
 const TRAILING_COMMA_REGEX = /,\s*([}\]])/g;
-const DISALLOWED_OUTPUT = [/password/i, /private key/i, /how to hack/i];
+const DEFAULT_DISALLOWED_OUTPUT = [/password/i, /private key/i, /how to hack/i];
+
+export type ValidatePromptOutputOptions<T> = {
+  /** Extra leakage regexes; defaults are always applied unless you pass `includeDefaultLeakagePatterns: false`. */
+  leakagePatterns?: RegExp[];
+  /** When false, only `leakagePatterns` are used (must be non-empty). */
+  includeDefaultLeakagePatterns?: boolean;
+  /** Run after Zod parse succeeds; return failure to surface `output_domain_validation_failed`. */
+  afterParse?: (data: T) => { ok: true } | { ok: false; message?: string };
+};
+
+export type ValidatePromptOutputFailureReason =
+  | 'schema_invalid'
+  | 'output_leakage_detected'
+  | 'output_domain_validation_failed';
+
+function resolveLeakagePatterns(
+  options?: Pick<
+    ValidatePromptOutputOptions<unknown>,
+    'leakagePatterns' | 'includeDefaultLeakagePatterns'
+  >,
+): RegExp[] {
+  const custom = options?.leakagePatterns ?? [];
+  const includeDefault = options?.includeDefaultLeakagePatterns !== false;
+  if (includeDefault) {
+    return [...DEFAULT_DISALLOWED_OUTPUT, ...custom];
+  }
+  return custom.length ? custom : DEFAULT_DISALLOWED_OUTPUT;
+}
 
 /**
  * Z3: Parse JSON from text, stripping markdown fences.
@@ -74,8 +102,11 @@ export function repairMalformedJson<T>(raw: string): T | null {
 /**
  * Z3: Check output for leakage patterns (secrets, PII).
  */
-export function checkLeakagePatterns(text: string): string | null {
-  for (const rx of DISALLOWED_OUTPUT) {
+export function checkLeakagePatterns(
+  text: string,
+  patterns: RegExp[] = DEFAULT_DISALLOWED_OUTPUT,
+): string | null {
+  for (const rx of patterns) {
     if (rx.test(text)) return 'output_leakage_detected';
   }
   return null;
@@ -87,8 +118,10 @@ export function checkLeakagePatterns(text: string): string | null {
 export function validatePromptOutput<T>(
   raw: string,
   schema: OutputSchema<T>,
-): { ok: true; data: T } | { ok: false; reason: 'schema_invalid' | 'output_leakage_detected' } {
-  const leakage = checkLeakagePatterns(raw);
+  options?: ValidatePromptOutputOptions<T>,
+): { ok: true; data: T } | { ok: false; reason: ValidatePromptOutputFailureReason } {
+  const patterns = resolveLeakagePatterns(options);
+  const leakage = checkLeakagePatterns(raw, patterns);
   if (leakage) {
     return { ok: false, reason: 'output_leakage_detected' };
   }
@@ -103,6 +136,13 @@ export function validatePromptOutput<T>(
   const result = schema.safeParse(parsed);
   if (!result.success) {
     return { ok: false, reason: 'schema_invalid' };
+  }
+
+  if (options?.afterParse) {
+    const domain = options.afterParse(result.data);
+    if (!domain.ok) {
+      return { ok: false, reason: 'output_domain_validation_failed' };
+    }
   }
 
   return { ok: true, data: result.data };

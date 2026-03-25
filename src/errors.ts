@@ -8,6 +8,7 @@ export type PromptRefusalReason =
   | 'policy_disabled'
   | 'schema_invalid'
   | 'output_leakage_detected'
+  | 'output_domain_validation_failed'
   | 'input_too_long'
   | 'control_characters_blocked';
 
