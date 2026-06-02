@@ -8,7 +8,5 @@ disable-model-invocation: true
 
 # Session kickoff (prompt-guardrails-core)
 
-Baseline: `%USERPROFILE%\.cursor\skills\session-kickoff\SKILL.md`
-
-Overlay: [routing.md](routing.md)
+Use: [routing.md](routing.md)
 
