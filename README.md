@@ -98,3 +98,13 @@ through gateway translation, and authorize downstream actions.
 
 - **Source**: https://github.com/bstockwelldev/prompt-guardrails-core
 - **npm**: https://www.npmjs.com/package/@bstockwelldev/prompt-guardrails-core
+
+### Output types
+
+With strict TypeScript settings, omitting `outputSchema` returns a string on
+success. Supplying a Zod schema returns its parsed output type. If the schema
+can be undefined, narrow the resulting union before using the data. The same
+rules apply to middleware handlers. Check `result.success` before reading data.
+
+When migrating an explicit `invoke<MyObject>(...)` call, pass a matching schema
+if the caller needs an object. For raw output, omit the generic argument.

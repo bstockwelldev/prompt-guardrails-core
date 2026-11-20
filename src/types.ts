@@ -1,4 +1,4 @@
-import type { ZodType } from 'zod';
+import type { ZodType, ZodTypeDef } from 'zod';
 import type { PromptRefusalReason } from './errors.js';
 
 /**
@@ -82,4 +82,4 @@ export type PromptTelemetryEvent = {
 /**
  * Schema for structured output validation.
  */
-export type OutputSchema<T = unknown> = ZodType<T>;
+export type OutputSchema<T = unknown> = ZodType<T, ZodTypeDef, unknown>;
