@@ -14,9 +14,9 @@ function generateRequestId(): string {
 import type { OutputSchema } from './types.js';
 import { PromptGuardrailsError } from './errors.js';
 import { loadPolicyConfig, checkPolicyEnabled, type PromptRuntimeConfig } from './policy.js';
-import { validatePromptInput } from './input.js';
+import { validateInputLength, validatePromptInput } from './input.js';
 import { validatePromptOutput } from './output.js';
-import { buildMessages } from './prompt.js';
+import { buildMessages, buildUserContent } from './prompt.js';
 import { createTelemetryEvent } from './telemetry.js';
 
 export type GatewayAdapter = (params: {
@@ -43,6 +43,7 @@ export function createPromptRuntime(config: CreatePromptRuntimeOptions) {
       userData: string,
       options?: {
         systemContext?: string;
+        referenceContext?: string;
         outputSchema?: OutputSchema<T>;
         requestId?: string;
         tenantId?: string;
@@ -76,6 +77,11 @@ export function createPromptRuntime(config: CreatePromptRuntimeOptions) {
       let validatedInput: string;
       try {
         validatedInput = validatePromptInput(userData, policy);
+        if (options?.referenceContext?.trim()) {
+          const reference = validatePromptInput(options.referenceContext, policy);
+          validatedInput = buildUserContent(validatedInput, reference);
+          validateInputLength(validatedInput, policy);
+        }
       } catch (err) {
         if (err instanceof PromptGuardrailsError) {
           onTelemetry?.(createTelemetryEvent({

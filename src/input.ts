@@ -64,6 +64,17 @@ export function scrubSensitiveText(text: string): string {
   return out.slice(0, 8000);
 }
 
+export function validateInputLength(text: string, policy: PromptPolicy): void {
+  const maxLen = policy.constraints.maxInputLength ?? 64 * 1024;
+  if (text.length > maxLen) {
+    throw new PromptGuardrailsError(
+      'input_too_long',
+      `Input exceeds max length (${maxLen})`,
+      `length=${text.length}`,
+    );
+  }
+}
+
 /**
  * Z2: Validate prompt input against policy.
  * Throws PromptGuardrailsError on policy violation.
@@ -73,14 +84,7 @@ export function validatePromptInput(input: string, policy: PromptPolicy): string
   normalized = stripInvisibleChars(normalized);
   normalized = normalizeWhitespace(normalized);
 
-  const maxLen = policy.constraints.maxInputLength ?? 64 * 1024;
-  if (normalized.length > maxLen) {
-    throw new PromptGuardrailsError(
-      'input_too_long',
-      `Input exceeds max length (${maxLen})`,
-      `length=${normalized.length}`,
-    );
-  }
+  validateInputLength(normalized, policy);
 
   const controlCheck = input.replace(CONTROL_CHARS, '');
   if (controlCheck.length !== input.length) {

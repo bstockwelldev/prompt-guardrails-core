@@ -30,10 +30,18 @@ export function buildStructuredPrompt(input: StructuredPromptInput): string {
   return parts.join('\n\n');
 }
 
+export function buildUserContent(userData: string, referenceContext?: string): string {
+  const task = userData.trim();
+  const reference = referenceContext?.trim();
+  if (!reference) return task;
+  const paragraph = `Reference material:\n${reference}`;
+  return task ? `${task}\n\n${paragraph}` : paragraph;
+}
+
 /**
  * Build messages array for SDK consumers (system + user).
  */
-export function buildMessages(input: StructuredPromptInput): Array<{ role: 'user' | 'system'; content: string }> {
+export function buildMessages(input: StructuredPromptInput & { referenceContext?: string }): Array<{ role: 'user' | 'system'; content: string }> {
   const systemParts: string[] = [input.system];
   if (input.context?.trim()) {
     systemParts.push(`${CONTEXT_START}\n${input.context.trim()}\n${CONTEXT_END}`);
@@ -41,6 +49,6 @@ export function buildMessages(input: StructuredPromptInput): Array<{ role: 'user
 
   return [
     { role: 'system', content: systemParts.join('\n\n') },
-    { role: 'user', content: input.userData.trim() },
+    { role: 'user', content: buildUserContent(input.userData, input.referenceContext) },
   ];
 }
