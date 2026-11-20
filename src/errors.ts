@@ -5,6 +5,7 @@
 export type PromptRefusalReason =
   | 'injection_detected'
   | 'url_blocked'
+  | 'policy_invalid'
   | 'policy_disabled'
   | 'schema_invalid'
   | 'output_leakage_detected'
@@ -21,6 +22,6 @@ export class PromptGuardrailsError extends Error {
     this.name = 'PromptGuardrailsError';
     this.reason = reason;
     this.details = details;
-    Object.setPrototypeOf(this, PromptGuardrailsError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }

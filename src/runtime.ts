@@ -13,7 +13,7 @@ function generateRequestId(): string {
 }
 import type { OutputSchema } from './types.js';
 import { PromptGuardrailsError } from './errors.js';
-import { loadPolicyConfig, checkPolicyEnabled, type PromptRuntimeConfig } from './policy.js';
+import { InvalidPolicyError, loadPolicyConfig, checkPolicyEnabled, type PromptRuntimeConfig } from './policy.js';
 import { validateInputLength, validatePromptInput } from './input.js';
 import { validatePromptOutput } from './output.js';
 import { buildMessages, buildUserContent } from './prompt.js';
@@ -30,6 +30,14 @@ export type CreatePromptRuntimeOptions = PromptRuntimeConfig & {
   invokeGateway: GatewayAdapter;
 };
 
+type InvokeOptions = {
+  systemContext?: string;
+  referenceContext?: string;
+  requestId?: string;
+  tenantId?: string;
+  userId?: string;
+};
+
 /**
  * Z1: Create a guarded prompt runtime.
  * Orchestrates: load policy → validate input → invoke gateway → validate output → emit telemetry.
@@ -37,119 +45,101 @@ export type CreatePromptRuntimeOptions = PromptRuntimeConfig & {
 export function createPromptRuntime(config: CreatePromptRuntimeOptions) {
   const { getPolicy, isPromptEnabled, onTelemetry, invokeGateway } = config;
 
-  return {
-    async invoke<T>(
-      policyRef: string,
-      userData: string,
-      options?: {
-        systemContext?: string;
-        referenceContext?: string;
-        outputSchema?: OutputSchema<T>;
-        requestId?: string;
-        tenantId?: string;
-        userId?: string;
-      },
-    ): Promise<PromptInvocationResult<T>> {
-      const requestId = options?.requestId ?? generateRequestId();
+  function invoke(
+    policyRef: string, userData: string, options?: InvokeOptions & { outputSchema?: undefined },
+  ): Promise<PromptInvocationResult<string>>;
+  function invoke<T>(
+    policyRef: string, userData: string, options: InvokeOptions & { outputSchema: OutputSchema<T> },
+  ): Promise<PromptInvocationResult<T>>;
+  function invoke<T>(
+    policyRef: string, userData: string, options: InvokeOptions & { outputSchema: OutputSchema<T> | undefined },
+  ): Promise<PromptInvocationResult<T | string>>;
+  function invoke<S extends OutputSchema>(
+    policyRef: string, userData: string, options: (InvokeOptions & { outputSchema?: S }) | undefined,
+  ): Promise<PromptInvocationResult<S['_output'] | string>>;
+  async function invoke<T>(
+    policyRef: string, userData: string, options?: InvokeOptions & { outputSchema?: OutputSchema<T> },
+  ): Promise<PromptInvocationResult<T | string>> {
+    const requestId = options?.requestId ?? generateRequestId();
 
-      let policy: PromptPolicy;
-      try {
-        policy = loadPolicyConfig(policyRef, getPolicy);
-      } catch (err) {
+    let policy: PromptPolicy;
+    try {
+      policy = loadPolicyConfig(policyRef, getPolicy);
+    } catch (err) {
+      return {
+        success: false,
+        refused: true,
+        reason: err instanceof InvalidPolicyError ? err.reason : 'policy_disabled',
+        requestId,
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    if (!checkPolicyEnabled(policy, isPromptEnabled)) {
+      return {
+        success: false,
+        refused: true,
+        reason: 'policy_disabled',
+        requestId,
+      };
+    }
+
+    let validatedInput: string;
+    try {
+      validatedInput = validatePromptInput(userData, policy);
+      if (options?.referenceContext?.trim()) {
+        const reference = validatePromptInput(options.referenceContext, policy);
+        validatedInput = buildUserContent(validatedInput, reference);
+        validateInputLength(validatedInput, policy);
+      }
+    } catch (err) {
+      if (err instanceof PromptGuardrailsError) {
+        onTelemetry?.(createTelemetryEvent({
+          requestId,
+          policyRef,
+          promptId: policy.id,
+          promptVersion: policy.version,
+          promptText: userData,
+          outputText: '',
+          latencyMs: 0,
+          tenantId: options?.tenantId,
+          userId: options?.userId,
+          policyHit: err.reason,
+        }));
         return {
           success: false,
           refused: true,
-          reason: 'policy_disabled',
+          reason: err.reason,
           requestId,
-          message: err instanceof Error ? err.message : String(err),
+          message: err.message,
         };
       }
+      throw err;
+    }
 
-      if (!checkPolicyEnabled(policy, isPromptEnabled)) {
-        return {
-          success: false,
-          refused: true,
-          reason: 'policy_disabled',
-          requestId,
-        };
-      }
+    const messages = buildMessages({
+      system: policy.system,
+      userData: validatedInput,
+      context: options?.systemContext,
+    });
 
-      let validatedInput: string;
-      try {
-        validatedInput = validatePromptInput(userData, policy);
-        if (options?.referenceContext?.trim()) {
-          const reference = validatePromptInput(options.referenceContext, policy);
-          validatedInput = buildUserContent(validatedInput, reference);
-          validateInputLength(validatedInput, policy);
-        }
-      } catch (err) {
-        if (err instanceof PromptGuardrailsError) {
-          onTelemetry?.(createTelemetryEvent({
-            requestId,
-            policyRef,
-            promptId: policy.id,
-            promptVersion: policy.version,
-            promptText: userData,
-            outputText: '',
-            latencyMs: 0,
-            tenantId: options?.tenantId,
-            userId: options?.userId,
-            policyHit: err.reason,
-          }));
-          return {
-            success: false,
-            refused: true,
-            reason: err.reason,
-            requestId,
-            message: err.message,
-          };
-        }
-        throw err;
-      }
-
-      const messages = buildMessages({
-        system: policy.system,
-        userData: validatedInput,
-        context: options?.systemContext,
+    const start = Date.now();
+    let rawOutput: string;
+    try {
+      rawOutput = await invokeGateway({
+        messages,
+        policy,
+        requestId,
       });
+    } catch (err) {
+      throw err;
+    }
 
-      const start = Date.now();
-      let rawOutput: string;
-      try {
-        rawOutput = await invokeGateway({
-          messages,
-          policy,
-          requestId,
-        });
-      } catch (err) {
-        throw err;
-      }
+    const latencyMs = Date.now() - start;
 
-      const latencyMs = Date.now() - start;
-
-      if (options?.outputSchema) {
-        const validated = validatePromptOutput(rawOutput, options.outputSchema);
-        if (!validated.ok) {
-          onTelemetry?.(createTelemetryEvent({
-            requestId,
-            policyRef,
-            promptId: policy.id,
-            promptVersion: policy.version,
-            promptText: validatedInput,
-            outputText: rawOutput,
-            latencyMs,
-            tenantId: options?.tenantId,
-            userId: options?.userId,
-            policyHit: validated.reason,
-          }));
-          return {
-            success: false,
-            refused: true,
-            reason: validated.reason,
-            requestId,
-          };
-        }
-
+    if (options?.outputSchema) {
+      const validated = validatePromptOutput(rawOutput, options.outputSchema);
+      if (!validated.ok) {
         onTelemetry?.(createTelemetryEvent({
           requestId,
           policyRef,
@@ -160,13 +150,13 @@ export function createPromptRuntime(config: CreatePromptRuntimeOptions) {
           latencyMs,
           tenantId: options?.tenantId,
           userId: options?.userId,
+          policyHit: validated.reason,
         }));
-
         return {
-          success: true,
-          data: validated.data,
+          success: false,
+          refused: true,
+          reason: validated.reason,
           requestId,
-          refused: false,
         };
       }
 
@@ -184,10 +174,31 @@ export function createPromptRuntime(config: CreatePromptRuntimeOptions) {
 
       return {
         success: true,
-        data: rawOutput as T,
+        data: validated.data,
         requestId,
         refused: false,
       };
-    },
-  };
+    }
+
+    onTelemetry?.(createTelemetryEvent({
+      requestId,
+      policyRef,
+      promptId: policy.id,
+      promptVersion: policy.version,
+      promptText: validatedInput,
+      outputText: rawOutput,
+      latencyMs,
+      tenantId: options?.tenantId,
+      userId: options?.userId,
+    }));
+
+    return {
+      success: true,
+      data: rawOutput,
+      requestId,
+      refused: false,
+    };
+  }
+
+  return { invoke };
 }

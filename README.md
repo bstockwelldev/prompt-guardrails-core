@@ -84,7 +84,23 @@ Direct callers of `buildMessages` can also pass `referenceContext` and own
 input validation. Hosts must authorize access to the source, preserve roles
 through gateway translation, and authorize downstream actions.
 
+### Custom policy registries
+
+Return `null` for a missing policy. A returned object must match the requested
+ID and normalized version, with a canonical `id@version` key and nonblank system
+instructions. Custom versions such as `1` remain supported. The core validates
+constraints before the enablement hook runs and passes the parsed snapshot to
+the gateway. Unrecognized fields are dropped and omitted `allowUrls` defaults
+to false. Move adapter-specific metadata outside the policy object.
+
+Direct loader callers receive a `PromptGuardrailsError` for an invalid result.
+Runtime callers receive a `policy_invalid` refusal. Add this case to exhaustive
+refusal handlers. Adapters own provider token and temperature settings and must
+authorize tool execution.
+
 ## Refusal Reasons
+
+- `policy_invalid` – Registry result failed validation or identity matching
 
 - `injection_detected` – Prompt injection pattern detected
 - `url_blocked` – URLs not allowed by policy
@@ -98,3 +114,13 @@ through gateway translation, and authorize downstream actions.
 
 - **Source**: https://github.com/bstockwelldev/prompt-guardrails-core
 - **npm**: https://www.npmjs.com/package/@bstockwelldev/prompt-guardrails-core
+
+### Output types
+
+With strict TypeScript settings, omitting `outputSchema` returns a string on
+success. Supplying a Zod schema returns its parsed output type. If the schema
+can be undefined, narrow the resulting union before using the data. The same
+rules apply to middleware handlers. Check `result.success` before reading data.
+
+When migrating an explicit `invoke<MyObject>(...)` call, pass a matching schema
+if the caller needs an object. For raw output, omit the generic argument.
