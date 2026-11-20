@@ -6,13 +6,20 @@ consumer_dir="$(mktemp -d)"
 trap 'rm -rf -- "$consumer_dir"' EXIT
 
 cd "$repo_dir"
-package_file="$(npm pack --ignore-scripts --pack-destination "$consumer_dir")"
+npm pack --ignore-scripts --pack-destination "$consumer_dir"
+# npm may print lifecycle output alongside the tarball name.
+shopt -s nullglob
+package_files=("$consumer_dir"/*.tgz)
+if (( ${#package_files[@]} != 1 )); then
+  echo 'Expected one npm tarball in the temporary consumer directory.' >&2
+  exit 1
+fi
 zod_version="$(node -p "require('./package-lock.json').packages['node_modules/zod'].version")"
 cp tests/types/output-contracts.mts "$consumer_dir/"
 
 cd "$consumer_dir"
 printf '%s\n' '{"private":true,"type":"module"}' > package.json
-npm install --ignore-scripts --no-audit --no-fund "./$package_file" "zod@$zod_version"
+npm install --ignore-scripts --no-audit --no-fund "${package_files[0]}" "zod@$zod_version"
 "$repo_dir/node_modules/.bin/tsc" --noEmit --strict --skipLibCheck \
   --target ES2020 --module NodeNext output-contracts.mts
 
