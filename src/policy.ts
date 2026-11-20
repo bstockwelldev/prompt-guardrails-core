@@ -1,5 +1,7 @@
 import type { PromptPolicy, PolicyRef } from './types.js';
-import { PromptRegistrySchema } from './schemas.js';
+import { z } from 'zod';
+import { PromptGuardrailsError } from './errors.js';
+import { PromptPolicyEntrySchema, PromptRegistrySchema } from './schemas.js';
 
 /**
  * Z3: Parse policy reference "id@version" or "id@v1.2.3".
@@ -13,6 +15,19 @@ export function parsePolicyRef(policy: string): PolicyRef {
   let versionPart = policy.slice(atIndex + 1);
   if (versionPart.startsWith('v')) versionPart = versionPart.slice(1);
   return { id: idPart, version: versionPart, key: policy };
+}
+
+// Custom registries also support matching short versions, such as "1".
+const resolvedPolicySchema = PromptPolicyEntrySchema.extend({
+  version: z.string().min(1),
+  key: z.string(),
+  system: z.string().refine(text => text.trim().length > 0),
+});
+
+export class InvalidPolicyError extends PromptGuardrailsError {
+  constructor() {
+    super('policy_invalid', 'Registry returned an invalid or mismatched policy');
+  }
 }
 
 export type PolicyRegistry = (id: string, version: string) => PromptPolicy | null;
@@ -35,10 +50,15 @@ export function loadPolicyConfig(
 ): PromptPolicy {
   const ref = parsePolicyRef(policyRef);
   const policy = getPolicy(ref.id, ref.version);
-  if (!policy) {
+  if (policy === null) {
     throw new Error(`Unknown policy ${policyRef}`);
   }
-  return policy;
+  const parsed = resolvedPolicySchema.safeParse(policy);
+  if (!parsed.success || parsed.data.id !== ref.id || parsed.data.version !== ref.version ||
+      parsed.data.key !== `${ref.id}@${ref.version}`) {
+    throw new InvalidPolicyError();
+  }
+  return parsed.data;
 }
 
 /**

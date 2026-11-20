@@ -13,7 +13,7 @@ function generateRequestId(): string {
 }
 import type { OutputSchema } from './types.js';
 import { PromptGuardrailsError } from './errors.js';
-import { loadPolicyConfig, checkPolicyEnabled, type PromptRuntimeConfig } from './policy.js';
+import { InvalidPolicyError, loadPolicyConfig, checkPolicyEnabled, type PromptRuntimeConfig } from './policy.js';
 import { validateInputLength, validatePromptInput } from './input.js';
 import { validatePromptOutput } from './output.js';
 import { buildMessages, buildUserContent } from './prompt.js';
@@ -69,7 +69,7 @@ export function createPromptRuntime(config: CreatePromptRuntimeOptions) {
       return {
         success: false,
         refused: true,
-        reason: 'policy_disabled',
+        reason: err instanceof InvalidPolicyError ? err.reason : 'policy_disabled',
         requestId,
         message: err instanceof Error ? err.message : String(err),
       };

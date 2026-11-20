@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
   createPromptRuntime,
+  createPromptPolicyRegistry,
+  loadPolicyConfig,
+  PromptGuardrailsError,
   type GatewayAdapter,
   type PolicyRegistry,
   type PromptPolicy,
@@ -116,7 +119,7 @@ describe('createPromptRuntime', () => {
     expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ requestId, policyHit }));
   });
 
-  // T11–T13 characterize the current API for future design decisions.
+  // T11–T12 characterize the current API for future design decisions.
   it('T11 places caller context in the system-role message', async () => {
     const { runtime, invokeGateway } = setup();
     const systemContext = 'Synthetic reference marker 17';
@@ -138,23 +141,61 @@ describe('createPromptRuntime', () => {
     expect(invokeGateway).toHaveBeenCalledTimes(1);
   });
 
-  it('T13 forwards a different policy identity returned by a custom registry', async () => {
-    const { runtime, getPolicy, invokeGateway } = setup();
-    const other = { ...policy, id: 'alternate', version: '2.0.0', key: 'alternate@2.0.0' };
-    getPolicy.mockReturnValue(other);
+  it.each([
+    ['id', { id: 'alternate' }],
+    ['version', { version: '2' }],
+    ['key', { key: 'other@1' }],
+    ['system', { system: '  ' }],
+    ['missing constraints', { constraints: undefined }],
+    ['token budget', { constraints: { maxTokens: 0 } }],
+    ['temperature', { constraints: { maxTokens: 1, temperature: 3 } }],
+    ['input limit', { constraints: { maxTokens: 1, maxInputLength: -1 } }],
+    ['tool names', { constraints: { maxTokens: 1, tools: [7] } }],
+  ])('T13 refuses invalid registry %s before the enablement hook', async (_name, override) => {
+    const isPromptEnabled = vi.fn(() => true);
+    const { runtime, getPolicy, invokeGateway } = setup({ isPromptEnabled });
+    // A JavaScript registry can return values outside the TypeScript contract.
+    getPolicy.mockReturnValue({ ...policy, ...override } as PromptPolicy);
+    expect(() => loadPolicyConfig(policy.key, getPolicy)).toThrow(PromptGuardrailsError);
     const result = await runtime.invoke(policy.key, input, { requestId });
-    expect(getPolicy).toHaveBeenCalledWith(policy.id, policy.version);
-    expect(result.success).toBe(true);
-    expect(invokeGateway).toHaveBeenCalledTimes(1);
-    expect(invokeGateway).toHaveBeenCalledWith(expect.objectContaining({ policy: other, requestId }));
+    expect(result).toMatchObject({ success: false, refused: true, reason: 'policy_invalid', requestId });
+    expect(isPromptEnabled).not.toHaveBeenCalled();
+    expect(invokeGateway).not.toHaveBeenCalled();
   });
 
-  it('T13 rejects before the gateway when the custom registry omits constraints', async () => {
+  it.each(['custom', 'factory'])('dispatches a validated %s snapshot', async source => {
+    const version = source === 'custom' ? '1' : '1.0.0';
+    const key = `${policy.id}@${version}`;
+    const constraints = { maxTokens: 30, temperature: 0, tools: ['lookup'], maxInputLength: 30 };
+    const entry = { ...policy, key, version, constraints };
+    const registry = source === 'custom' ? () => entry : createPromptPolicyRegistry([entry]);
+    const isPromptEnabled = vi.fn(() => {
+      constraints.tools.push('later');
+      return true;
+    });
+    const { runtime, getPolicy, invokeGateway } = setup({ isPromptEnabled });
+    getPolicy.mockImplementation(registry);
+    const result = await runtime.invoke(`${policy.id}@v${version}`, input, { requestId });
+    expect(result.success).toBe(true);
+    expect(isPromptEnabled).toHaveBeenCalledWith(policy.id, version);
+    expect(invokeGateway).toHaveBeenCalledWith(expect.objectContaining({
+      policy: { ...entry, constraints: { ...constraints, tools: ['lookup'], allowUrls: false } },
+    }));
+  });
+
+  it('enforces the validated custom input limit before dispatch', async () => {
     const { runtime, getPolicy, invokeGateway } = setup();
-    const { constraints: _omitted, ...incomplete } = policy;
-    // @ts-expect-error A JavaScript host can return a policy missing this required field.
-    getPolicy.mockReturnValue(incomplete);
-    await expect(runtime.invoke(policy.key, input, { requestId })).rejects.toBeInstanceOf(TypeError);
+    getPolicy.mockReturnValue({ ...policy, constraints: { maxTokens: 8, maxInputLength: 2 } });
+    expect(await runtime.invoke(policy.key, 'abc')).toMatchObject({ success: false, reason: 'input_too_long' });
+    expect(invokeGateway).not.toHaveBeenCalled();
+  });
+
+  it('preserves the registry exception path', async () => {
+    const { runtime, getPolicy, invokeGateway } = setup();
+    getPolicy.mockImplementation(() => { throw new Error('synthetic registry failure'); });
+    expect(await runtime.invoke(policy.key, input)).toMatchObject({
+      success: false, reason: 'policy_disabled', message: 'synthetic registry failure',
+    });
     expect(invokeGateway).not.toHaveBeenCalled();
   });
 });
