@@ -106,6 +106,26 @@ Runtime callers receive a `policy_invalid` refusal. Add this case to exhaustive
 refusal handlers. Adapters own provider token and temperature settings and must
 authorize tool execution.
 
+### Gateway and telemetry failures
+
+| Outcome | Runtime behavior |
+| --- | --- |
+| Gateway throws or rejects | Rejects with the original error, after one adapter call and before telemetry. |
+| Telemetry callback throws synchronously | Rejects with the callback error. This can replace a pending success or refusal. |
+| Policy cannot be resolved, is invalid, or is disabled | Returns a refusal before gateway dispatch and before invoking telemetry. |
+| Input or output is refused and telemetry returns normally | Returns the refusal. Input refusals occur before dispatch. Output refusals occur after dispatch. |
+
+`onTelemetry` is a synchronous callback. The runtime does not await a promise
+returned by it. Hosts using an asynchronous sink should handle sink failures
+inside the integration, and can catch synchronous sink errors if they want
+the original prompt outcome delivered. The gateway adapter owns retries.
+A telemetry error may arrive after the gateway has already completed, so
+retrying the entire invocation may repeat gateway work.
+
+`withPromptGuardrails` propagates runtime rejections and skips the handler.
+A returned refusal is converted to an error containing the refusal reason
+and also skips the handler.
+
 ## Refusal Reasons
 
 - `policy_invalid` – Registry result failed validation or identity matching

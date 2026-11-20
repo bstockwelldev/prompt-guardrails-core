@@ -43,6 +43,28 @@ describe('withPromptGuardrails', () => {
     expect(invokeGateway).not.toHaveBeenCalled();
   });
 
+  it('propagates a gateway rejection without calling telemetry or the handler', async () => {
+    const { invoke, invokeGateway, onTelemetry, handler } = setup();
+    const error = new Error('synthetic gateway failure');
+    invokeGateway.mockRejectedValue(error);
+
+    await expect(invoke({ text: 'Sample ticket' }, ctx)).rejects.toBe(error);
+    expect(invokeGateway).toHaveBeenCalledTimes(1);
+    expect(onTelemetry).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('propagates a telemetry exception without calling the handler', async () => {
+    const { invoke, invokeGateway, onTelemetry, handler } = setup();
+    const error = new Error('synthetic telemetry failure');
+    onTelemetry.mockImplementation(() => { throw error; });
+
+    await expect(invoke({ text: 'Sample ticket' }, ctx)).rejects.toBe(error);
+    expect(invokeGateway).toHaveBeenCalledTimes(1);
+    expect(onTelemetry).toHaveBeenCalledTimes(1);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it.each([
     { source: 'both extracted', ids: { tenantId: 'tenant-input', userId: 'user-input' },
       tenantId: 'tenant-input', userId: 'user-input' },
