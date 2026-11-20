@@ -35,6 +35,7 @@ export type PromptInvocation = {
   policyRef: string;
   policy: PromptPolicy;
   systemContext?: string;
+  referenceContext?: string;
   userData: string;
   messages?: Array<{ role: 'user' | 'system'; content: string }>;
   requestId?: string;

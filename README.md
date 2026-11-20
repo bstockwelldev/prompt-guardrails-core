@@ -65,6 +65,25 @@ const result = await runtime.invoke('support_chatbot@1.3.0', userInput, {
 });
 ```
 
+### Supplying reference material
+
+Pass retrieved or user-authored text in the optional `referenceContext` field.
+Reserve `systemContext` for instructions controlled by the application.
+
+```ts
+await runtime.invoke('support_chatbot@1.3.0', userInput, {
+  referenceContext: retrievedExcerpt,
+});
+```
+
+The runtime validates the task and reference under the same input policy.
+A URL-disabled policy can refuse a reference containing a URL. The combined
+user message, including its paragraph label and separator, must fit the input
+length limit. A blank reference preserves the existing message format.
+Direct callers of `buildMessages` can also pass `referenceContext` and own
+input validation. Hosts must authorize access to the source, preserve roles
+through gateway translation, and authorize downstream actions.
+
 ## Refusal Reasons
 
 - `injection_detected` – Prompt injection pattern detected
