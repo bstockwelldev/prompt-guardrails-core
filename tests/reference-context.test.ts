@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { buildMessages, createPromptRuntime, type GatewayAdapter } from '@bstockwelldev/prompt-guardrails-core';
+import { INJECTION_VECTORS } from './fixtures/red-team.js';
 
 const marker = 'sample excerpt';
 const userMessage = 'task\n\nReference material:\n' + marker;
@@ -43,4 +44,33 @@ it.each([
   expect(invokeGateway).not.toHaveBeenCalled();
   expect(onTelemetry).toHaveBeenCalledTimes(1);
   expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ policyHit: reason }));
+});
+
+it.each(INJECTION_VECTORS)('refuses matching task and reference text before dispatch: %s', async text => {
+  const { runtime, invokeGateway, onTelemetry } = setup();
+  const taskResult = await runtime.invoke('p@1', text);
+  const referenceResult = await runtime.invoke('p@1', 'task', { referenceContext: text });
+
+  for (const result of [taskResult, referenceResult]) {
+    expect(result).toMatchObject({
+      success: false,
+      refused: true,
+      reason: 'injection_detected',
+    });
+  }
+  expect(invokeGateway).not.toHaveBeenCalled();
+  expect(onTelemetry).toHaveBeenCalledTimes(2);
+  for (const [event] of onTelemetry.mock.calls) {
+    expect(event).toMatchObject({ policyHit: 'injection_detected' });
+  }
+});
+
+it('dispatches ordinary task and reference text once', async () => {
+  const { runtime, invokeGateway, onTelemetry } = setup();
+  const result = await runtime.invoke('p@1', 'task', { referenceContext: marker });
+
+  expect(result).toMatchObject({ success: true, data: 'ok' });
+  expect(invokeGateway).toHaveBeenCalledTimes(1);
+  expect(onTelemetry).toHaveBeenCalledTimes(1);
+  expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ policyHit: null }));
 });

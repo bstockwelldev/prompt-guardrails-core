@@ -1,6 +1,6 @@
 /**
  * Input validation and guardrail tests.
- * Covers: malformed input, prompt injection, typoglycemia, URL exfiltration,
+ * Covers: malformed input, prompt injection, URL exfiltration,
  * control characters, and schema validation.
  */
 import { describe, it, expect } from 'vitest';
@@ -16,7 +16,6 @@ import {
 import type { PromptPolicy } from '@bstockwelldev/prompt-guardrails-core';
 import {
   INJECTION_VECTORS,
-  TYPOGLYCEMIA_VECTORS,
   URL_EXFILTRATION_VECTORS,
   CONTROL_CHAR_VECTORS,
   VALID_INPUT_VECTORS,
@@ -83,12 +82,7 @@ describe('checkInjectionPatterns', () => {
     const reason = checkInjectionPatterns(input);
     expect(reason).toBe('injection_detected');
   });
-  it.each(TYPOGLYCEMIA_VECTORS)('detects obfuscated injection: %s', (input) => {
-    const normalized = stripInvisibleChars(input).toLowerCase();
-    const reason = checkInjectionPatterns(normalized);
-    expect(reason === 'injection_detected' || reason === null).toBe(true);
-  });
-  it('returns null for safe input', () => {
+  it('returns null for an ordinary task', () => {
     expect(checkInjectionPatterns('Hello, help me design a game.')).toBe(null);
   });
 });
@@ -126,15 +120,10 @@ describe('validatePromptInput', () => {
     }
   });
 
-  it('rejects prompt injection', () => {
-    for (const input of INJECTION_VECTORS) {
-      expect(() => validatePromptInput(input, DEFAULT_POLICY)).toThrow(
-        PromptGuardrailsError,
-      );
-      expect(() => validatePromptInput(input, DEFAULT_POLICY)).toThrow(
-        /injection_detected|Prompt injection/,
-      );
-    }
+  it.each(INJECTION_VECTORS)('refuses a matching input with the policy reason: %s', (input) => {
+    expect(() => validatePromptInput(input, DEFAULT_POLICY)).toThrow(
+      expect.objectContaining({ reason: 'injection_detected' }),
+    );
   });
 
   it('rejects URLs when allowUrls is false', () => {

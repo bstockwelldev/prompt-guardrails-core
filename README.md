@@ -84,6 +84,14 @@ Direct callers of `buildMessages` can also pass `referenceContext` and own
 input validation. Hosts must authorize access to the source, preserve roles
 through gateway translation, and authorize downstream actions.
 
+### Prompt-injection checks
+
+The runtime checks task text and reference material for known patterns before
+dispatch. Pattern matching can miss obfuscated or paraphrased instructions and
+can flag legitimate text. Treat accepted input as untrusted. Hosts must
+authorize tool calls and data access independently, even when input passes
+validation.
+
 ### Custom policy registries
 
 Return `null` for a missing policy. A returned object must match the requested
