@@ -97,23 +97,37 @@ describe('createPromptRuntime', () => {
     expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ requestId, policyHit: reason }));
   });
 
-  it('T09 propagates the original gateway error before emitting telemetry', async () => {
-    const { runtime, invokeGateway, onTelemetry } = setup();
-    const error = new Error('synthetic gateway failure');
-    invokeGateway.mockRejectedValue(error);
-    await expect(runtime.invoke(policy.key, input, { requestId })).rejects.toBe(error);
-    expect(invokeGateway).toHaveBeenCalledTimes(1);
-    expect(onTelemetry).not.toHaveBeenCalled();
-  });
+  it.each(['throws synchronously', 'rejects asynchronously'] as const)(
+    'T09 propagates the original gateway error when the adapter %s',
+    async failure => {
+      const { runtime, invokeGateway, onTelemetry } = setup();
+      const error = new Error('synthetic gateway failure');
+      if (failure === 'throws synchronously') {
+        invokeGateway.mockImplementation(() => { throw error; });
+      } else {
+        invokeGateway.mockRejectedValue(error);
+      }
+
+      await expect(runtime.invoke(policy.key, input, { requestId })).rejects.toBe(error);
+      expect(invokeGateway).toHaveBeenCalledTimes(1);
+      expect(onTelemetry).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
-    { outcome: 'success', text: input, gatewayCalls: 1, policyHit: null },
-    { outcome: 'input refusal', text: blockedUrl, gatewayCalls: 0, policyHit: 'url_blocked' },
-  ])('T10 a throwing telemetry callback masks $outcome', async ({ text, gatewayCalls, policyHit }) => {
+    { outcome: 'raw success', text: input, reply: 'plain reply', schema: undefined, gatewayCalls: 1, policyHit: null },
+    { outcome: 'structured success', text: input, reply: '{"label":"ok"}', schema: outputSchema, gatewayCalls: 1, policyHit: null },
+    { outcome: 'output refusal', text: input, reply: '{}', schema: outputSchema, gatewayCalls: 1, policyHit: 'schema_invalid' },
+    { outcome: 'input refusal', text: blockedUrl, reply: 'unused', schema: undefined, gatewayCalls: 0, policyHit: 'url_blocked' },
+  ])('T10 a throwing telemetry callback masks $outcome', async ({
+    text, reply, schema, gatewayCalls, policyHit,
+  }) => {
     const { runtime, invokeGateway, onTelemetry } = setup();
     const error = new Error('synthetic telemetry failure');
+    invokeGateway.mockResolvedValue(reply);
     onTelemetry.mockImplementation(() => { throw error; });
-    await expect(runtime.invoke(policy.key, text, { requestId })).rejects.toBe(error);
+
+    await expect(runtime.invoke(policy.key, text, { requestId, outputSchema: schema })).rejects.toBe(error);
     expect(invokeGateway).toHaveBeenCalledTimes(gatewayCalls);
     expect(onTelemetry).toHaveBeenCalledTimes(1);
     expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ requestId, policyHit }));
